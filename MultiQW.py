@@ -114,6 +114,15 @@ def P4(t,diag,eigs,Psi0,e0):
     res = np.abs(temp[e0])**2
     return np.mean(res)
 
+def QAOA(t,diag,eigs,Psi0,e0,H_P):
+    #Uses QAOA instead of quantum walks
+    temp = np.copy(Psi0)
+    for alpha, beta in t:
+        temp = (np.exp(-1j * beta * H_P) * temp) #Apply H_P
+        d = np.exp(-1j * alpha * diag)
+        temp = eigs.T @ (d * (eigs @ temp)) #Apply H_G
+    return np.abs(temp[e0])**2
+
 def heur(n):
   #Heuristic gamma for n qubits, from the Callison paper
   return 0.887 * (2 ** (1/2) * (n * (n+3))**0.5) * scipy.special.erfinv(1 - 1/2**n) / 2 / n
@@ -139,7 +148,7 @@ def find_smallest_input(func, target):
     return (low + high) / 2
 
 
-def SpinGlass2(n,m, heuristic = True, inf_time = True, plot_energy = False, write = True):
+def SpinGlass2(n,m, heuristic = True, inf_time = True, plot_energy = False, write = True, use_QAOA = False):
     #n is the number of qubits in the spin glass
     #m is number of stages of the walk
     #inf_time chooses between infinite time averages and short time averages
@@ -186,6 +195,14 @@ def SpinGlass2(n,m, heuristic = True, inf_time = True, plot_energy = False, writ
         Es = []
         points = []
         times = []
+
+        if use_QAOA == True:
+            # A placeholder for now, we don't have a good heuristic for QAOA
+            diag, eigs = np.linalg.eigh(H_G)
+            t = [[0.5,0.3]]
+            print(QAOA(t,diag,eigs.T,Psi0,arg,np.diag(H_P)))
+            return
+        
         def obj(gammas):
             #For a given set of gammas, return the success probability
             #We in fact return -Prob as this can then be fed into an optimiser
@@ -249,4 +266,4 @@ def SpinGlass2(n,m, heuristic = True, inf_time = True, plot_energy = False, writ
         f1.close()
     return np.mean(probs)
 
-SpinGlass2(9,5)
+SpinGlass2(10,1,use_QAOA=True)
