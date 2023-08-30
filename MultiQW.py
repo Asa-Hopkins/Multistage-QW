@@ -45,31 +45,17 @@ def all_states(n):
         lists.append([1,-1])
     return np.fromiter(itertools.chain.from_iterable(itertools.product(*lists)),int).reshape(-1,n)
 
-def P(t,diag,eigs,Psi0,e0):
+def P(t,diag,eigs,Psi0,e0,H):
     temp = eigs @ Psi0 #Rotate Psi0 into basis where H is diagonal
     #Note that because H is symmetric, the eigenbasis is orthogonal, so its inverse is its transpose
     diags = np.exp(-1j * t[:,None] * diag[None,:]) #Calculate diagonals for H at each t
     temp = (diags * temp[None,:]).T #Apply H to Psi0
     
-    psit = eigs.T[e0] @ temp #rotate back, with a trick for optimisation
-    #The next operation would be to take the inner product with the state e0
-    #But because e0 just has a single nonzero element, the inner product is equivalent to
-    #just reading out that element. We can therefore simplify the previous matrix multiplication
-    #by only calculating that single element in the first place.
+    psit = eigs.T @ temp #rotate back, with a trick for optimisation    
+    res = np.abs(psit[e0])**2
     
-    res = np.abs(psit)**2
-    return res
-
-def E(t,diag,eigs,Psi0,e0, H_G):
-    #Same calculation as for P above
-    temp = eigs @ Psi0
-    diags = np.exp(-1j * t[:,None] * diag[None,:])
-    temp = (diags * temp[None,:]).T
-    psit = eigs.T @ temp
-    
-    #Now calculate the expected energy in the graph Hamiltonian    
-    res = np.diag(psit.T.conj() @ (H_G @ psit))
-    return res
+    E = np.sum(psit.conj() * (H @ psit), axis=0)
+    return res, np.real(E)
 
 def P2(eigs,Psi0,e0):
     #We can use the formula from the Callison paper to calculate P_inf
@@ -101,7 +87,7 @@ def P3(eigs,Psi0,e0):
     return np.sum(vals * np.abs(eigs[-1][:,e0]**2))
 
 
-def P4(t,diag,eigs,Psi0,e0):
+def P4(t,diag,eigs,Psi0,e0,H):
     #Does a multi-stage quantum walk but using fixed times
     m = len(eigs)
     temp = np.copy(Psi0)
@@ -112,16 +98,22 @@ def P4(t,diag,eigs,Psi0,e0):
         temp = (d * temp) #Apply H to Psi0
         temp = eigs[i].T @ temp
     res = np.abs(temp[e0])**2
-    return np.mean(res)
+    
+    E = np.sum(temp.conj() * (H @ temp), axis=0)
+    return np.mean(res), np.mean(np.real(E))
 
 def QAOA(t,diag,eigs,Psi0,e0,H_P):
     #Uses QAOA instead of quantum walks
     temp = np.copy(Psi0)
+    temp = np.vstack([Psi0]*len(t[0][0])).T
     for alpha, beta in t:
-        temp = (np.exp(-1j * beta * H_P) * temp) #Apply H_P
-        d = np.exp(-1j * alpha * diag)
-        temp = eigs.T @ (d * (eigs @ temp)) #Apply H_G
-    return np.abs(temp[e0])**2
+        temp = (np.exp(-1j * beta[None,:] * H_P[:,None]) * temp) #Apply H_P
+        d = np.exp(-1j * alpha[None,:] * diag[:,None])
+        temp = eigs @ temp
+        temp = d*temp
+        temp = eigs.T @ temp #Apply H_G
+    E = np.sum(temp.conj() * (H_P[:,None] * temp), axis=0)
+    return np.abs(temp[e0])**2, np.real(E)
 
 def heur(n):
   #Heuristic gamma for n qubits, from the Callison paper
@@ -148,7 +140,7 @@ def find_smallest_input(func, target):
     return (low + high) / 2
 
 
-def SpinGlass2(n,m, heuristic = True, inf_time = True, plot_energy = False, write = True, use_QAOA = False):
+def SpinGlass2(n,m, heuristic = True, inf_time = True, plot_energy = False, write = True):
     #n is the number of qubits in the spin glass
     #m is number of stages of the walk
     #inf_time chooses between infinite time averages and short time averages
@@ -195,14 +187,6 @@ def SpinGlass2(n,m, heuristic = True, inf_time = True, plot_energy = False, writ
         Es = []
         points = []
         times = []
-
-        if use_QAOA == True:
-            # A placeholder for now, we don't have a good heuristic for QAOA
-            diag, eigs = np.linalg.eigh(H_G)
-            t = [[0.5,0.3]]
-            print(QAOA(t,diag,eigs.T,Psi0,arg,np.diag(H_P)))
-            return
-        
         def obj(gammas):
             #For a given set of gammas, return the success probability
             #We in fact return -Prob as this can then be fed into an optimiser
@@ -252,6 +236,7 @@ def SpinGlass2(n,m, heuristic = True, inf_time = True, plot_energy = False, writ
             probs.append(-x['fun'])
             params.append(x['x'])
         print(probs[-1])
+        die
     if write == True:
         if inf_time == False:
             f1 = open(f'./Probs/shortavg{n}.{m}.arr','wb')
@@ -266,4 +251,151 @@ def SpinGlass2(n,m, heuristic = True, inf_time = True, plot_energy = False, writ
         f1.close()
     return np.mean(probs)
 
-SpinGlass2(10,1,use_QAOA=True)
+def MakePlot(n, m, use_QAOA = False, exact = True, samples = 50, num = 100):
+    #n is the number of qubits in the spin glass
+    #m is number of stages of the walk
+    #inf_time chooses between infinite time averages and short time averages
+    #plot_energy chooses between plotting the energy or not
+    #write chooses between actually writing the output files or not
+    N = 2**n
+    H_G = grid(n)
+
+    Psi0 = 1/np.sqrt(N)*np.ones(N)
+
+    entries = pd.read_csv('./qwspinglass_data/sk_instances.csv')
+    entries = np.array(entries)
+    if not use_sparse_approx:
+        H_G = np.array(H_G.toarray(), np.float32)
+                
+    probs = []
+    params = []
+    bounds = []
+    
+    for numero in np.arange((n-5)*10000,(n-5)*10000 + 1):
+        
+        J = np.load("./qwspinglass_data/sk_instances/"+entries[numero,0]+".Jmat.npy")
+        h = -np.load("./qwspinglass_data/sk_instances/"+entries[numero,0]+".hvec.npy")
+        print(entries[numero,:])
+        J = -np.tril(J + J.T)/2
+        states = all_states(n).T
+        
+        #For a given state, represented by a column vector, state.T @ J @ state gives its energy
+        #Here we have all the states stacked into a matrix, if we did a normal matrix multiplications
+        #we'd be doing unecessary calculations (e.g state[a].T @ J @ state[b], where a!=b)
+        #To avoid this, the formula used below only evaluates the diagonal elements of the matrix multiplication
+        
+        H_P = np.sum(states * (J @ states), axis=0) + np.sum(states*h[:,None],axis = 0)
+        #scale = (n * np.sum(H_P**2)/N + np.sum(H_P @ H_G @ H_P)/N)
+      
+        arg = np.argmin(H_P) #Get index of lowest energy
+        evl = H_P[arg] #The element at that index is the eigenenergy
+      
+        state0 = np.zeros(N) #The vector with a 1 in that position is the eigenvector
+        state0[arg] = 1
+        
+        if not use_sparse_approx:
+            H_P = np.array(np.diag(H_P), dtype = np.float32)
+        else:
+            H_P = scipy.sparse.diags(H_P, format = 'csr')
+        points = []
+        times = []
+        N = num
+        
+        probs = np.zeros((N,N))
+        E = np.zeros((N,N))
+        
+        if use_QAOA:
+            if m == 1:
+                alphas = x = np.linspace(0,np.pi,N)
+                betas = y = np.linspace(0,np.pi,N)
+                eigs = np.linalg.eigh(H_G)
+                for i in range(0,N):
+                    print(i)
+                    t = [[np.ones(N)*alphas[i],betas]]
+                    probs[:,i], E[:,i] = QAOA(t, eigs[0], eigs[1].T, Psi0, arg, np.diag(H_P))
+            else:
+                #Seems to stretch exponentially in the x axis for larger number of stages
+                #May indicate a more natural choice of heuristic?
+                g0 = x = np.logspace(0,3,N)
+                t0 = y = np.linspace(0,3*np.pi,N)
+                eigs = np.linalg.eigh(H_G)
+                for i in range(0,N):
+                  print(i)
+                  t = []
+                  gamma = g0[i]
+                  #t_driver = gamma * t_problem
+                  #t0 = t_driver + t_problem = t_problem * (1 + gamma)
+                  for j in range(0,m):
+                      gamma = g0[i] * m/(j+1)
+                      t_problem = t0/(1 + gamma)
+                      t_driver = gamma * t_problem
+                      t.append([t_driver, t_problem])
+                  probs[:,i], E[:,i] = QAOA(t, eigs[0], eigs[1].T, Psi0, arg, np.diag(H_P))
+                  
+                      
+        else:
+            if m==1:
+                gammas = np.linspace(0,10,N)
+                x = gammas
+                y = gammas
+                
+                for i in range(0,N):
+                  print(i)
+                  eigs = np.linalg.eigh(H_G*i*10/N + H_P)
+                  probs[i,:], E[i,:] = P(np.linspace(0,10,N),eigs[0],eigs[1].T,Psi0,arg,H_P)
+            
+            if m == 2:
+              gammas = x = np.linspace(0,10,N)
+              y = gammas[:N//2]
+              H = (H_G[None,:,:] + H_P[None,:,:]*gammas[:,None,None])
+              eigs = np.linalg.eigh(H)
+              vals, eigs = eigs[0], eigs[1].transpose(0,2,1)
+              probs = np.zeros((N//2,N))
+              E = np.zeros((N//2,N))
+              for i in range(0,N):
+                print(i)
+                for j in range(0,N//2):
+                  Psit = np.copy(Psi0)
+                  
+                  var1 = np.stack([eigs[j],eigs[i]])
+                  var2 = np.stack([vals[j],vals[i]])
+                  if exact:
+                      probs[j,i] = P3(var1,Psi0,arg)
+                  else:
+                      upper = np.random.rand(m,samples)*10
+                      probs[j,i], E[j,i] = P4(upper, var2,var1, Psi0, arg, H_P)
+
+            if m > 2:
+                g = x = np.linspace(0,10,N)
+                dg = y = np.linspace(0,1,N)
+                
+                upper = np.random.rand(m,50)*10
+                for i in range(0,N):
+                  print(i)
+                  for j in range(0,N):
+                    gammas = g[i]*(1-dg[j])**np.arange(0,m)
+                    gammas = gammas[::-1]
+                    Psit = np.copy(Psi0)
+                    H = (H_G[None,:,:] + H_P[None,:,:]*gammas[:,None,None])
+                    eigs = np.linalg.eigh(H)
+                    vals, eigs = eigs[0], eigs[1].transpose(0,2,1)
+                    if exact:
+                        probs[j,i] = P3(eigs,Psi0,arg)
+                    else:
+                        upper = np.random.rand(m,100)*10
+                        probs[j,i], E[j,i] = P4(upper, vals, eigs, Psi0, arg, H_P)
+        plt.contourf(x,y,probs, levels = 10)
+        plt.colorbar(label="Success Probability")
+        if m == 2 and use_QAOA == False:
+            x1, y1 =  heur(n)/np.tan(np.arange(1,2+1)*np.pi/(2*(2+1)))
+            plt.scatter(x1,y1,marker='x', color="black", alpha=0.5, linewidths=1)
+        if m > 1 and use_QAOA == True:
+            plt.semilogx()
+        plt.show()
+        
+        plt.contourf(x,y,E, levels = 10)
+        plt.colorbar(label="Energy")
+        plt.show()
+
+MakePlot(10,5, use_QAOA = True, num = 50)
+#SpinGlass2(5,5)
