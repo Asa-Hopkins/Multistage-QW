@@ -9,7 +9,7 @@ There's a variety of choices for the calculation to be performed. Heuristic gamm
 The infinite time average over all stages can be calculated, or short time averages can be done (where I derive a reasonable timescale in my notes, this disagrees with the Callison paper's numerically derived timescale).
 It is also possible to plot the energy (w.r.t the graph Hamiltonian) and log-probability over the duration of the quantum walk, which shows them both converging from `-n` to `0` for enough stages.
 
-A read-only link to my notes can be viewed here, https://www.overleaf.com/read/qpjtbkccwyby.
+I'll add a link to the pre-print when it becomes available.
 
 These are currently unfinished, but outline the formulae for infinite time averages, heuristic gamma values, and short average time scale. These notes also show that a polynomial scaling algorithm can be derived, which follows from the fact that the exponential scaling exponent seems to have a polynomial relationship with the number of stages in the quantum walk.
 
