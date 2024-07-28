@@ -10,8 +10,8 @@ num_threads=$1
 filename_prefix=$2
 
 # Define the lists of n and m values
-n_values=(5 6)  # You can modify this list
-m_values=(2)  # You can modify this list
+n_values=(5 6)
+m_values=(1 2)
 
 # Iterate through n and m values
 for n in "${n_values[@]}"; do
@@ -24,17 +24,13 @@ for n in "${n_values[@]}"; do
     fi
 
     # Calculate the number of bytes per thread
-    bytes_per_thread=$((2000 / num_threads))
-    remaining_bytes=$((2000 % num_threads))
+    base_bytes_per_thread=$((2000 / num_threads))
+    extra_bytes=$((2000 % num_threads))
 
     for m in "${m_values[@]}"; do
         for (( thread=0; thread<num_threads; thread++ )); do
-            start_point=$((thread * bytes_per_thread))
-            if [ "$thread" -eq "$((num_threads - 1))" ]; then
-                bytes_to_read=$((bytes_per_thread + remaining_bytes))
-            else
-                bytes_to_read=$bytes_per_thread
-            fi
+            start_point=$((thread * base_bytes_per_thread + (thread < extra_bytes ? thread : extra_bytes)))
+            bytes_to_read=$((base_bytes_per_thread + (thread < extra_bytes ? 1 : 0)))
 
             echo "Running program with n=$n, m=$m, filename=$filename, start_point=$start_point, bytes_to_read=$bytes_to_read"
             ./out "$n" "$m" "$filename" "$start_point" "$bytes_to_read" &
