@@ -1,0 +1,36 @@
+ - The file 'sk_instances.csv' contains some information on every SK instance
+   we generated. It has 3 columns:
+      - 'id'     : a unique 30-character identifier for each instance
+      - 'nqubits': the number of qubits of the instance
+      - 'gamma'  : the numerically calculated optimal gamma value where
+                   possible (only up to nqubits=11), assuming the hypercube
+                   Hamiltonian is set up as in Eq. 12 and the SK Hamiltonian
+                   is set up as in Eq. 16
+
+- The files SK_{n}n contain the first 2000 instances sorted by ID, in a binary format.
+  It contains 64-bit floating point values, and each instance contains n(n+1)/2 values.
+  The first n(n-1)/2 values describe the lower triangle of J, and the remaining n values
+  describe the h parameters.
+
+- The remaining files described are not included here, but are included in the full dataset
+
+ - The file 'sk_instances.tar.gz' contains 2 .npy files (to be loaded with numpy
+   in Python with 'numpy.load(<filename>)'. The 2 files are
+      - '<id>.Jmat.npy': an nqubits-by-nqubits array containing the J_jk values
+                         as in Eq. 16, indexed such that loaded_Jmat[j,k]=J_jk
+                         (the diagonal is set to 0)
+      - '<id>.hvec.npy': a 1D array of length nqubits containing the h_j values
+                         as in Eq. 16, indexed such that loaded_hvec[j]=h_j
+
+- The file 'rem_instances.csv' contains some information on every rem instance
+   we generated. It has 3 columns:
+      - 'id'     : a unique 30-character identifier for each instance
+      - 'nqubits': the number of qubits of the instance
+      - 'gamma'  : the numerically calculated optimal gamma value where
+                   possible (only up to nqubits=11), assuming the hypercube
+                   Hamiltonian is set up as in Eq. 12 and the SK Hamiltonian
+                   is set up as in Eq. 17
+ - The file 'rem_instances.tar.gz' contains 1 .npy (to be loaded with numpy
+   in Python with 'numpy.load(<filename>)'. The file is
+      - '<id>.nrg.npy': a 1D array of length 2^(nqubits) containing the F_j values
+                        as in Eq. 17, indexed such that loaded_nrg[j]=F_j
