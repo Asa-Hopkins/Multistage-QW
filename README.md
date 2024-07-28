@@ -5,6 +5,9 @@ This work is based on the paper "Finding spin glass ground states using quantum 
 
 It uses the database mentioned in that paper, https://doi.org/10.15128/r21544bp097, which contains 10k spin glass instances to allow for reproducibility.
 
+I recommend compiling MultiQW.cpp with the `-O3` and `-march=native` flags, note that it requires `eigen3` and `vcl2` to be installed. The resulting file takes 5 inputs, the parameters n and m, the path to the file containing 
+the problem instances, the start point for reading the instances and the number of instances to read and process. The last two parameters are used by `run.sh` to automatically spawn multiple threads for parallelisation. 
+
 This is a simplified version of the original code, that only implements short-time averages but in a highly optimised implementation. There are two choices for heuristic, the original heuristic by Adam Callison, 
 and a new heuristic derived by me. They both perform similarly, but the new heuristic doesn't rely on known statistics of spin glasses so is preferred as it should generalise to other problem types.
 In principle, a classical algorithm like simulated annealing could be used to estimate the energy spread too, but this hasn't been implemented yet. In a handful of tests done, simulated annealing always found
