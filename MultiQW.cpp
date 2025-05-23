@@ -35,6 +35,7 @@ unsigned int log2(unsigned int v){
 
 
 //Taken from https://stackoverflow.com/questions/27229371/inverse-error-function-in-c
+//and https://stackoverflow.com/questions/60472139/computing-the-inverse-of-the-complementary-error-function-erfcinv-in-c
 //Credit goes to the author, njuffa, for this and the next function.
 float my_erfcinvf (float a)
 {
@@ -218,6 +219,7 @@ int main(int argc, char* argv[]){
   unsigned int reps = 2000;
 
   float* results = (float*)malloc(reps*4);
+  float* gaps = (float*)malloc(reps*4);
 
 
   //Number of samples for Monte-Carlo integral
@@ -229,7 +231,7 @@ int main(int argc, char* argv[]){
   }
 
   char output[20];
-  std::sprintf(output, "output_%d_%d", n, m);
+  std::sprintf(output, "output_%d_%d_%d", n, m, start);
   std::ofstream outFile(output, std::ios::binary | std::ios::app);
 
   std::ifstream file(filename, std::ios::binary);
@@ -243,19 +245,28 @@ int main(int argc, char* argv[]){
   ArrayXf gammas(m);
   ArrayXf onenorms(m);
 
+  //Problem energy levels
   ArrayXf H_P(N);
-  ArrayXcf psi(N);
 
-  ArrayXXf J(n,n);
+  //This is used for calculating H_P, state(i,j) = sigma_z_i * sigma_z_j
   ArrayXXf state(n,n);
 
-  
+  //Our quantum register
+  ArrayXcf psi(N);
+
+  //Ising problem parameters
+  ArrayXXf J(n,n);
+  ArrayXf h(n);
+
+  //Used for reading in parameters
   char buffer[4*n*(n+1)];
   double temp[n*(n+1)/2];
 
   for (int rep = 0; rep < reps; rep++){
 
+    //We care about both the ground state and the energy gap
     double E_0 = 0;
+    double E_1 = 0;
     double E_max = 0;
     unsigned int E_loc = 0;
 
@@ -273,17 +284,21 @@ int main(int argc, char* argv[]){
         k++;
       }
     }
+
+    //Absorb 1/2 factor into J to follow paper
     J += J.transpose().eval();
+    J /= 2;
 
     for (int i = 0; i < n; i++){
-      J(i,i) = 2*temp[n*(n-1)/2 + i];
+      h(i) = temp[n*(n-1)/2 + i];
     }
 
     state.setConstant(1);
     psi.setConstant(1/sqrt(N));
 
-    //The way we calculate is prone to error so use a double
-    double E = J.sum()/2;
+    //The way we calculate E is prone to error so use a double
+    //Start with the energy of the all -1s state
+    double E = J.sum() - h.sum();
     H_P[0] = E;
   
     //Use a grey code to efficiently evaluate all energies
@@ -292,13 +307,17 @@ int main(int argc, char* argv[]){
       state.row(flip) *= -1;
       state.col(flip) *= -1;
       state(flip,flip) *= -1;
-      E += (2*(J.row(flip)*state.row(flip)).sum() - J(flip,flip)*state(flip,flip));
+      E += 4*(J.row(flip)*state.row(flip)).sum() - 2*h(flip)*state(flip,flip);
       H_P[grey(i)] = E;
 
       //keep track of ground state
       if (E < E_0){
+        E_1 = E_0;
         E_0 = E;
         E_loc = grey(i);
+      }
+      else if (E < E_1){
+        E_1 = E;
       }
 
       //keep track of highest state too
@@ -307,29 +326,40 @@ int main(int argc, char* argv[]){
       }
     }
     //We want to shift H_P to reduce the spectral radius
-    float kurt = (H_P*H_P*H_P*H_P).mean() / pow((H_P*H_P).mean(),2);
-    float skew = (H_P*H_P*H_P).mean() / pow((H_P*H_P).mean(),1.5);
+    //float kurt = (H_P*H_P*H_P*H_P).mean() / pow((H_P*H_P).mean(),2);
+    //float skew = (H_P*H_P*H_P).mean() / pow((H_P*H_P).mean(),1.5);
     H_P -= (E_max + E_0)/2;
     float E_abs = (E_max - E_0)/2;
     //Now H_P has been calculated
 
+
+    // This formula is from https://math.stackexchange.com/questions/89030/expectation-of-the-maximum-of-gaussian-random-variables/89147#89147
+    //Calculates estimated maximum energy level using the known variance and assuming a normal distribution
     float b = my_normcdfinvf(1/(float)N);
     float e_m = 0.577215664901532860;
     float e = 2.718281828459045;
     float a = (1 - e_m)*b + e_m*my_normcdfinvf(1/(e*N));
-    float HP2 = (2*(J*J).sum() - (J.matrix().diagonal().dot(J.matrix().diagonal())))/4;
+
+    //If the h was 0, we'd just want HP2 = 2*(J*J).sum()
+    //If we were to map to an n+1 qubit problem we'd get h/2 in both a row and a column
+    //so we need to add 2*2*(h/2).dot(h/2) = h.dot(h) 
+    float HP2 = 2*(J*J).sum() + (h*h).sum();
+
     //std::cout << (E_abs - a*sqrt(HP2))/E_abs << " " << kurt << " " << sqrt(HP2)*(my_normcdfinvf(1/(e*N)) - b)*sqrt(PI*PI/6)/E_abs << "\n";
-    //std::cout << (H_P * H_P).sum()/N << " " << HP2 << " " << heur[n - 5]*n << " " << E_0 << "\n\n";
+    //std::cout << (H_P * H_P).sum()/N << " " << HP2 << " " << heur[n - 5]*n << " " << E_0 << "\n";
   
-    //Calculate ideal short time
-    float short_t = 2*(J*J).sum() - 1.5*(J.matrix().diagonal().dot(J.matrix().diagonal()));
+    //Calculate walk time
+
+    //Similar to above, we want 8*(J*J).sum(), but having h != 0 changes the dynamics
+    //We have to derive a new formula that works for h != 0, as mapping to n+1 qubits also changes the dynamics
+    //The new formula is 8*(J*J).sum() + 2*h.h
+    float short_t = 8*(J*J).sum() + 2*(h*h).sum();
     short_t = sqrt(2*n/short_t);
 
+    //Should really use higher quality RNG
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_real_distribution<float> rand_t(short_t, 2*short_t);
-
-//    std::uniform_real_distribution<float> rand_g(0.5/m, (1 - 0.5/m)*PI/2);
 
     //Calculate gammas, upper bounds on spectral radius and generate evolution times.
     for (int i = 0; i<m; i++){
@@ -343,9 +373,6 @@ int main(int argc, char* argv[]){
       }
 
     }
-    std::sort(gammas.begin(), gammas.end(), std::greater<float>());
-    //for (auto g : gammas) std::cout << g << "\n";
-    //return 1;
 
     //Optimisation for single-stage
     if (m == 1){
@@ -383,6 +410,8 @@ int main(int argc, char* argv[]){
 
     }
   results[rep] = probs.sum()/samples;
+  gaps[rep] = E_1 - E_0;
   }
   outFile.write(reinterpret_cast<const char*>(results), reps * sizeof(float));
+  outFile.write(reinterpret_cast<const char*>(gaps), reps * sizeof(float));
 }
