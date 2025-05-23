@@ -300,6 +300,10 @@ int main(int argc, char* argv[]){
     //Start with the energy of the all -1s state
     double E = J.sum() - h.sum();
     H_P[0] = E;
+
+    //In case first state is ground
+    E_0 = E;
+    E_max = E;
   
     //Use a grey code to efficiently evaluate all energies
     for (unsigned int i = 1; i < N; i++){
@@ -332,7 +336,6 @@ int main(int argc, char* argv[]){
     float E_abs = (E_max - E_0)/2;
     //Now H_P has been calculated
 
-
     // This formula is from https://math.stackexchange.com/questions/89030/expectation-of-the-maximum-of-gaussian-random-variables/89147#89147
     //Calculates estimated maximum energy level using the known variance and assuming a normal distribution
     float b = my_normcdfinvf(1/(float)N);
@@ -346,7 +349,7 @@ int main(int argc, char* argv[]){
     float HP2 = 2*(J*J).sum() + (h*h).sum();
 
     //std::cout << (E_abs - a*sqrt(HP2))/E_abs << " " << kurt << " " << sqrt(HP2)*(my_normcdfinvf(1/(e*N)) - b)*sqrt(PI*PI/6)/E_abs << "\n";
-    //std::cout << (H_P * H_P).sum()/N << " " << HP2 << " " << heur[n - 5]*n << " " << E_0 << "\n";
+    std::cout << HP2 << " " << E_0 << "\n";
   
     //Calculate walk time
 
@@ -410,8 +413,9 @@ int main(int argc, char* argv[]){
 
     }
   results[rep] = probs.sum()/samples;
-  gaps[rep] = E_1 - E_0;
+  std::cout << results[rep] << "\n\n";
+  //gaps[rep] = E_1 - E_0;
   }
   outFile.write(reinterpret_cast<const char*>(results), reps * sizeof(float));
-  outFile.write(reinterpret_cast<const char*>(gaps), reps * sizeof(float));
+  //outFile.write(reinterpret_cast<const char*>(gaps), reps * sizeof(float));
 }
